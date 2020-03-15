@@ -25,7 +25,7 @@
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
-//#define checkheap() mm_heapcheck()
+//define checkheap() mm_heapcheck()
 #define checkheap()
 
 /* rounds up to the nearest multiple of ALIGNMENT */
@@ -70,28 +70,71 @@ void * heap_listp;
  */
 int mm_init(void)
 {
-    printf("Starting mm_init\n");
-    if((heap_listp = mem_sbrk(4*WSIZE)) == (void*)-1)
+
+    if((heap_listp = mem_sbrk(12*WSIZE)) == (void*)-1)
         return -1;
 
-    PUT(heap_listp,0);                                        //Alignment padding
-    PUT(heap_listp + (1* WSIZE), PACK(DSIZE, ALLOCATED));     //Prologue header
-    PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, ALLOCATED));    //Prologue footer
-    PUT(heap_listp + (3 * WSIZE), PACK(0, ALLOCATED));        //Epilogue header
-    heap_listp += (2*WSIZE);
+    printf("Heapstart at %lx\n", heap_listp);
 
-    checkheap();
+    PUT(heap_listp, 0);                                         //padding
+                           //padding
+    PUT(heap_listp + (1 * WSIZE), PACK(24, ALLOCATED));          //prologue header
+    PUT_P(heap_listp + (2 * WSIZE) , 0);                              //prolopgue prev points to 0 NULL
+    PUT_P(heap_listp + (4 * WSIZE), heap_listp + 32);                         //prologue next set to be epilogue
+    PUT(heap_listp + (6 * WSIZE), PACK(24, ALLOCATED));      //prologue footer
+    PUT(heap_listp + (7 * WSIZE), PACK(0, ALLOCATED));          //epilogue header
+    PUT_P(heap_listp + ( 8 * WSIZE), heap_listp + (2 * WSIZE));                //epilogue prev set to prologue header
+    PUT_P(heap_listp + (10* WSIZE), 0);                       //epilogue next set to 0 NULL
+    heap_listp += ( 2 * WSIZE);                            //skip padding to point heap_listp at prologue
+
+    printf("Heapstart at %lx\n", heap_listp);
+    printf("Get size works on heap start ptr? %d \n", GET_SIZE(HDRP(heap_listp)));
+   
+
+    printf("HERE in mm_init print the heap so far to check-\n\n");
+    printf("%lx \n", GET(heap_listp - (2 * WSIZE)));
+    printf("%lx \n", GET(heap_listp - (1*WSIZE)));
+    printf("%lx \n", GET_P(heap_listp  ));
+    printf("%lx \n", GET_P(heap_listp + (2 * WSIZE)));
+    printf("%lx \n", GET(heap_listp + (4 * WSIZE)));  //prologue footer
+    printf("%lx \n", GET(heap_listp + (5 * WSIZE)));  //epilogue header
+    printf("%lx \n", GET_P(heap_listp + (6 * WSIZE)));  //epilogue prev
+    printf("%lx \n", GET_P(heap_listp + (8 * WSIZE)));  //epilogue next
+
 
     if(extend_heap(CHUNKSIZE/WSIZE) == NULL ){
-        return -1;
+        //return -1;
     }
     printf("Completed mm_init, heap_listp now at %p \n", heap_listp);
+
     return 0;
+
+
+
+
+    // printf("Starting mm_init\n");
+    // if((heap_listp = mem_sbrk(4*WSIZE)) == (void*)-1)
+    //     return -1;
+
+    // PUT(heap_listp,0);                                        //Alignment padding
+    // PUT(heap_listp + (1* WSIZE), PACK(DSIZE, ALLOCATED));     //Prologue header
+    // PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, ALLOCATED));    //Prologue footer
+    // PUT(heap_listp + (3 * WSIZE), PACK(0, ALLOCATED));        //Epilogue header
+    // heap_listp += (2*WSIZE);
+
+    // checkheap();
+
+    // if(extend_heap(CHUNKSIZE/WSIZE) == NULL ){
+    //     return -1;
+    // }
+    // printf("Completed mm_init, heap_listp now at %p \n", heap_listp);
+    // return 0;
 
 }
 
 static void *extend_heap(size_t words){
 
+    printf("extend heap by n: %d \n", words);
 
     char* bp;
     size_t size;
@@ -101,15 +144,44 @@ static void *extend_heap(size_t words){
     if((long)(bp = mem_sbrk(size)) == 1)
         return NULL;
 
-    bp += 16; //bump up bp because of next and prev linked list pointers
+    void ** address_old_prev = bp - 16;
+    bp -= 16;
+   
+    printf("Address of start of new free area %p\n",bp);
+    printf("For ep_last we saved %lx\n",*address_old_prev);
 
+    PUT(HDRP(bp), PACK(size, UNALLOCATED));
+    PUT(FTRP(bp), PACK(size, UNALLOCATED));
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, ALLOCATED));
+
+    printf("Correctly wrote HDRP? %d\n", GET_SIZE(HDRP(bp)));
+    printf("Correctly wrote FTRP? %d\n", GET_SIZE(FTRP(bp)));
+    printf("Correctly wrote size of next blkp %d\n", GET_SIZE(HDRP(NEXT_BLKP(bp))));
+    printf("Address of next blkp calculated at %lx \n", NEXT_BLKP(bp));
+    printf("------------------Address calc for prev_blkp is %p \n", PREV_BLKP(bp));
+
+    //now wire up the pointers
+    PUT_P(bp, *address_old_prev);   //set the new free blocks prev pointer
+    //printf("SEt the new free block's prev pointer to old prev from epilogue %lx\n", old_prev);
+
+    PUT_P(bp + 8, NEXT_BLKP(bp));      //set the new free blocks next pointer
+    printf("SEt the new free blocks next to the new epilogue %lx\n", NEXT_BLKP(bp));
+
+
+    PUT_P(NEXT_BLKP(bp) + 8, 0); //set the newly written epilogue section's  next to point to 0, null
+    PUT_P(NEXT_BLKP(bp), bp ); //set the newly written epilogue section's prev to point to the new free block
+    PUT_P(PREV_BLKP(bp) + 8, bp);       //set the old prev's next to point to the new free block
+
+    //Test can we retrieve pointers correctly?
+    printf("Location of epilogue prev %p\n", (NEXT_BLKP(bp)));
     
+    exit(1);
     //Initialize free block header/footer and the epilogue header
-    PUT(HDRP(bp), PACK(size, UNALLOCATED));   //new free header
-    PUT(FTRP(bp), PACK(size, UNALLOCATED));   //new free block footer
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, ALLOCATED));  //new eiplogue block
+    // PUT(HDRP(bp), PACK(size, UNALLOCATED));   //new free header
+    // PUT(FTRP(bp), PACK(size, UNALLOCATED));   //new free block footer
+    // PUT(HDRP(NEXT_BLKP(bp)), PACK(0, ALLOCATED));  //new eiplogue block
 
-    checkheap();
+    // checkheap();
 
     return coalesce(bp); 
 
@@ -120,7 +192,7 @@ static void mm_heapcheck(){
     void* start = heap_listp-2;
     int count = 0;
 
-    while(1){
+    while(start < heap_listp + 50){
 
         printf("%d (%p): %d ", count++, start, (*(int *) start));
         printf("Size at ptr: %d Alloc at ptr %d \n", GET_SIZE(start), GET_ALLOC(start));
@@ -129,7 +201,7 @@ static void mm_heapcheck(){
 
         if( GET_SIZE(start) == 0 && GET_ALLOC(start) == 1){
             printf("saw epilogue so break\n");
-            break;
+            //break;
         }
         
 
