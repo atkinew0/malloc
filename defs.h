@@ -14,8 +14,8 @@
 #define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)// get footer pointer.
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) //next block pointer.
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) //previous block pointer looks to prev ftr for size calc.
-#define NEXT_LL(bp) ((char *)(bp) - (2 * DSIZE))
-#define PREV_LL(bp) ((char *)(bp) - (1 * DSIZE))
+#define NEXT_LL(bp) (*(intptr_t *)((char *)(bp) + DSIZE))
+#define PREV_LL(bp) (*(intptr_t *)(bp))
 #define HDRP_FREE(bp)  ((char *)(bp) - (WSIZE +  (2 * DSIZE) ))
 #define GET_NEXT(p) (GET( (char *)(p) +12  ))
 #define GET_PREV(p) (GET( (char *)(p) + 4 ))

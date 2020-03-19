@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -77,7 +78,6 @@ int mm_init(void)
     printf("Heapstart at %lx\n", heap_listp);
 
     PUT(heap_listp, 0);                                         //padding
-                           //padding
     PUT(heap_listp + (1 * WSIZE), PACK(24, ALLOCATED));          //prologue header
     PUT_P(heap_listp + (2 * WSIZE) , 0);                              //prolopgue prev points to 0 NULL
     PUT_P(heap_listp + (4 * WSIZE), heap_listp + 32);                         //prologue next set to be epilogue
@@ -134,7 +134,7 @@ int mm_init(void)
 
 static void *extend_heap(size_t words){
 
-    printf("extend heap by n: %d \n", words);
+    printf("\n\nExtend heap by n: %d \n words", words);
 
     char* bp;
     size_t size;
@@ -157,6 +157,7 @@ static void *extend_heap(size_t words){
     printf("Correctly wrote HDRP? %d\n", GET_SIZE(HDRP(bp)));
     printf("Correctly wrote FTRP? %d\n", GET_SIZE(FTRP(bp)));
     printf("Correctly wrote size of next blkp %d\n", GET_SIZE(HDRP(NEXT_BLKP(bp))));
+    printf("Correttly wrote alloc of next blkp %d\n",GET_ALLOC(HDRP(NEXT_BLKP(bp))));
     printf("Address of next blkp calculated at %lx \n", NEXT_BLKP(bp));
     printf("------------------Address calc for prev_blkp is %p \n", PREV_BLKP(bp));
 
@@ -164,18 +165,22 @@ static void *extend_heap(size_t words){
     PUT_P(bp, *address_old_prev);   //set the new free blocks prev pointer
     //printf("SEt the new free block's prev pointer to old prev from epilogue %lx\n", old_prev);
 
-    PUT_P(bp + 8, NEXT_BLKP(bp));      //set the new free blocks next pointer
-    printf("SEt the new free blocks next to the new epilogue %lx\n", NEXT_BLKP(bp));
+    PUT_P(bp + 8, NEXT_BLKP(bp) );      //set the new free blocks next pointer
+    printf("This says the location of the NEXT-BLKP is %p\n", NEXT_BLKP(bp));
+    printf("New free blocks prev pointer now points to %p\n", PREV_LL(bp));
+    printf("New free blocks next pointer now points to %p\n", NEXT_LL(bp));
+    printf("At that next pointer we have size %d\n", GET_SIZE(HDRP(NEXT_LL(bp))));
+
 
 
     PUT_P(NEXT_BLKP(bp) + 8, 0); //set the newly written epilogue section's  next to point to 0, null
     PUT_P(NEXT_BLKP(bp), bp ); //set the newly written epilogue section's prev to point to the new free block
     PUT_P(PREV_BLKP(bp) + 8, bp);       //set the old prev's next to point to the new free block
 
-    //Test can we retrieve pointers correctly?
-    printf("Location of epilogue prev %p\n", (NEXT_BLKP(bp)));
+    printf("1 Now the newly written epilogues prev points to %p\n", PREV_LL(NEXT_BLKP(bp)));
+    printf("2 Now the old prev's next points to %p\n", NEXT_LL(PREV_BLKP(bp)));
+
     
-    exit(1);
     //Initialize free block header/footer and the epilogue header
     // PUT(HDRP(bp), PACK(size, UNALLOCATED));   //new free header
     // PUT(FTRP(bp), PACK(size, UNALLOCATED));   //new free block footer
@@ -260,15 +265,19 @@ static void *find_fit(size_t asize){
 
     void* bp = heap_listp;
     printf("in FIND_FIT try to find block for %ld\n", asize);
-
+    int attempt = 0;
 
     while(GET_SIZE(HDRP(bp)) > 0){
         printf("size of this current block in find_fit is %d %d\n", GET_SIZE(HDRP(bp)), GET_ALLOC(HDRP(bp)));
         if(!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
+            printf("Found fit!\n");
             return bp;
         }
 
-        bp = NEXT_BLKP(bp);
+        bp = NEXT_LL(bp);
+        printf("Here in find_fit about to jump from %p to %p\n", bp, NEXT_LL(bp));
+        attempt++;
+        if(attempt > 50 ) break;
         
     }
     printf("WHILE loop finished find fit returning NULL - we couldn't find a fit\n");
@@ -288,23 +297,70 @@ static void *find_fit(size_t asize){
 
 static void place(void *bp, size_t asize){
 
+    printf("PLACE a block of size %d, starting at location %p\n", asize, bp);
     size_t csize = GET_SIZE(HDRP(bp));
 
-    if((csize - asize) >= (2* DSIZE)){
+    if((csize - asize) >= (3* DSIZE)){
 
+        printf("Fragmenting new free block of %d\n", (csize-asize));
         PUT(HDRP(bp), PACK(asize, ALLOCATED));   //resize header on current block were allocating
         PUT(FTRP(bp), PACK(asize, ALLOCATED));   //resize footer on current block were allocating
+
+    
         bp = NEXT_BLKP(bp);
         PUT(HDRP(bp), PACK(csize -asize, UNALLOCATED));  //create new block after this one with remaining space
         PUT(FTRP(bp), PACK(csize - asize, UNALLOCATED));  //create new block after this one with remaining space
 
+        //adjust pointers to wire in the new free where the alloced is
+        //bp should be currently at new free
+    
+        printf("AAA Here in fragment bp currently at %p\n", bp);
+        printf("AAA the preb blkp's next LL value is %p\n", NEXT_LL(PREV_BLKP(bp)));
+
+        PUT_P(PREV_LL(PREV_BLKP(bp))+ 8, bp);   //adjust alloceds prev's next to new free
+        PUT_P(bp, PREV_LL(PREV_BLKP(bp)));      //write a new prev to new free - copy alloceds
+        PUT_P(bp + 8, NEXT_LL(PREV_BLKP(bp)) ); //write a new next to the new free - copy alloceds
+        PUT_P(NEXT_LL(bp), bp);                 //Adjust alloced's next's prev to new free
+        
+        printf("\n\nAfter doing the part-SPLICE at location of new free MY prev is %p\n", PREV_LL(bp));
+        printf("After doing the part slpice at location of new free MY next is %p \n", NEXT_LL(bp));
+        printf("My location is at %p\n",bp);
+    
 
     }else{
         PUT(HDRP(bp), PACK(csize, ALLOCATED));        //dont change size, just mark to allocated
         PUT(FTRP(bp), PACK(csize, ALLOCATED));        //dont change size just mark to allocated the footer
+        splice_out(bp);
     }
 
 
+
+}
+
+//Adds a newly free block (freed or split) to the front of the free list just after prologue
+void splice_out(void * bp){
+
+
+    PUT_P(PREV_LL(bp) + 8, NEXT_LL(bp));     //point the newly allocated blocks prev's next to allocated blocks next
+    PUT_P(NEXT_LL(bp), PREV_LL(bp));         //point the allocated blocks next's prev to allocated blocks prev
+
+    printf("Spliceout test- allocated's prev points to allocated's next? ");
+    printf("PREV's NEXT %p\n", GET_P((PREV_LL(bp) + 8)) );
+    printf("CUrrent's next's prev points to? %p\n", GET_P(NEXT_LL(bp)));
+    assert(GET_P(PREV_LL(bp) + 8) == GET_P(NEXT_LL(bp) ));
+
+}
+
+//Adding a newly free block to front of list by wiring it after prologue
+void splice_in(void * bp){
+
+    void * saved_next =  GET_P(heap_listp + 8);  //save what prologue's old next was
+    PUT_P(heap_listp + 8, bp);                //now point prologues next to new free block
+    PUT_P(bp, heap_listp);                    //set new free blocks prev to prologue
+    PUT_P(bp + 8, saved_next );               //set new free blocks next to saved next
+    PUT_P(saved_next, bp);                    //finally set the next blocks prev to new free block
+
+    printf("SPLICE IN test- bp %p and its next %p\n",bp, NEXT_LL(bp) );
 
 }
 
@@ -318,6 +374,7 @@ void mm_free(void *bp)
 
     PUT(HDRP(bp), PACK(size, UNALLOCATED));
     PUT(FTRP(bp), PACK(size, UNALLOCATED));
+    splice_in(bp);
     coalesce(bp);
 
 }
@@ -343,6 +400,8 @@ static void *coalesce(void *bp){
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, UNALLOCATED));
         PUT(FTRP(bp), PACK(size, UNALLOCATED));
+        PUT_P(bp, NEXT_LL(NEXT_BLKP(bp)));          //rewire this next to skip over coalesced block
+        PUT_P(NEXT_BLKP(bp), bp);                   //rewire my next to point at me not coalesced block
     }
 
     else if (!prev_alloc && next_alloc){
@@ -350,7 +409,14 @@ static void *coalesce(void *bp){
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, UNALLOCATED));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, UNALLOCATED));
+
+        void * correct_next = NEXT_LL(bp);
         bp = PREV_BLKP(bp);
+        PUT_P(bp + 8, correct_next); //rewire PREV BLKP's next to be my next
+        
+        printf("In coalesce scenario 3 my next is %p\n", NEXT_LL(bp));
+        PUT_P(NEXT_LL(bp), bp);    //rewire my next's prev to prev blkp
+        
     }
 
     else {
