@@ -6,8 +6,8 @@
 #define PACK(size, alloc) ((size) | (alloc)) //flag that represents both block size & if_allocated.
 #define GET(p) (*(unsigned int *)(p)) //load address.
 #define PUT(p,val) (*(unsigned int *)(p) = (val)) // save address.
-#define PUT_P(p,val) (*(intptr_t *)(p) = (val))
-#define GET_P(p) (*(intptr_t *)(p))
+#define PUT_P(p,val) (*(unsigned long *)(p) = (unsigned long *)(val))
+#define GET_P(p) (*(unsigned long *)(p))
 #define GET_SIZE(p) (GET(p) & ~0x7) //get size.
 #define GET_ALLOC(p) (GET(p) & 0x1) //get if_allocated.
 #define HDRP(bp) ((char *)(bp) - WSIZE) // get header pointer.
